@@ -1,0 +1,27 @@
+{
+    "include": ["backend/app"],
+    "exclude": [
+        "**/node_modules",
+        "**/__pycache__",
+        "**/venv",
+        "**/.venv",
+        "**/.git",
+        "**/.mypy_cache",
+        "**/.pytest_cache",
+        "**/.vscode",
+        "**/.*"  // ← ДОБАВЛЕНО: исключить скрытые папки
+    ],
+    "venvPath": ".",
+    "venv": "venv",
+    "pythonVersion": "3.11",
+    "typeCheckingMode": "basic",
+    "reportMissingImports": "none",
+    "reportMissingTypeStubs": "none",
+    "reportOptionalMemberAccess": "none",
+    "reportOptionalSubscript": "none",
+    "reportGeneralTypeIssues": "none",
+    "reportAttributeAccessIssue": "none",
+    "reportReturnType": "none",
+    "reportArgumentType": "none",
+    "reportUndefinedVariable": "warning"
+}

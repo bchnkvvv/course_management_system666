@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Система управления учебными курсами</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-graduation-cap me-2"></i>
+                Управление учебными курсами
+            </a>
+            <div class="ms-auto">
+                <div class="btn-group" role="group">
+                    <button class="btn btn-outline-light" id="useOrmBtn" onclick="setDataSource('orm')">
+                        <i class="fas fa-database"></i> ORM
+                    </button>
+                    <button class="btn btn-outline-light" id="useNativeBtn" onclick="setDataSource('native')">
+                        <i class="fas fa-code"></i> Native SQL
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3">
+                <div class="card mb-4">
+                    <div class="card-header bg-success text-white">
+                        <i class="fas fa-tree"></i> Иерархия департаментов
+                    </div>
+                    <div class="card-body" id="departmentTree">
+                        <div class="text-center text-muted">Загрузка...</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <i class="fas fa-history"></i> Версионирование
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <small>При обновлении курса создаётся новая версия</small>
+                        </div>
+                        <div id="versionInfo"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9">
+                <!-- Tabs -->
+                <ul class="nav nav-tabs" id="myTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="courses-tab" data-bs-toggle="tab" data-bs-target="#courses" type="button" role="tab">
+                            <i class="fas fa-book"></i> Курсы
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="schedule-tab" data-bs-toggle="tab" data-bs-target="#schedule" type="button" role="tab">
+                            <i class="fas fa-calendar-alt"></i> Расписание
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="students-tab" data-bs-toggle="tab" data-bs-target="#students" type="button" role="tab">
+                            <i class="fas fa-users"></i> Студенты/Преподаватели
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content mt-3">
+                    <!-- Courses Tab -->
+                    <div class="tab-pane fade show active" id="courses" role="tabpanel">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><i class="fas fa-list"></i> Список курсов</span>
+                                <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createCourseModal">
+                                    <i class="fas fa-plus"></i> Создать курс
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div id="coursesList"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Schedule Tab -->
+                    <div class="tab-pane fade" id="schedule" role="tabpanel">
+                        <div class="card">
+                            <div class="card-header">
+                                <i class="fas fa-calendar-week"></i> Расписание занятий
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label for="groupSelect" class="form-label">Выберите группу:</label>
+                                    <select id="groupSelect" class="form-select" onchange="loadSchedule()">
+                                        <option value="ПИ-31">ПИ-31</option>
+                                        <option value="ПИ-32">ПИ-32</option>
+                                    </select>
+                                </div>
+                                <div id="scheduleTable"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Students/Teachers Tab -->
+                    <div class="tab-pane fade" id="students" role="tabpanel">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header bg-warning">
+                                        <i class="fas fa-user-graduate"></i> Студенты
+                                    </div>
+                                    <div class="card-body" id="studentsList"></div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header bg-info">
+                                        <i class="fas fa-chalkboard-user"></i> Преподаватели
+                                    </div>
+                                    <div class="card-body" id="teachersList"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Course Modal -->
+    <div class="modal fade" id="createCourseModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Создать новый курс</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="createCourseForm">
+                        <div class="mb-3">
+                            <label class="form-label">Код курса</label>
+                            <input type="text" class="form-control" name="code" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Название</label>
+                            <input type="text" class="form-control" name="title" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Описание</label>
+                            <textarea class="form-control" name="description"></textarea>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label class="form-label">Кредиты</label>
+                                <input type="number" class="form-control" name="credits" value="4">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Всего часов</label>
+                                <input type="number" class="form-control" name="hours_total" value="64">
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" onclick="createCourse()">Создать</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Update Course Modal -->
+    <div class="modal fade" id="updateCourseModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Обновить курс (новая версия)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="updateCourseForm">
+                        <input type="hidden" id="updateCourseId">
+                        <div class="mb-3">
+                            <label class="form-label">Название</label>
+                            <input type="text" class="form-control" id="updateTitle" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Описание</label>
+                            <textarea class="form-control" id="updateDescription"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Причина изменения</label>
+                            <input type="text" class="form-control" id="changeReason" placeholder="Например: Обновление учебного плана">
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <label class="form-label">Кредиты</label>
+                                <input type="number" class="form-control" id="updateCredits">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Всего часов</label>
+                                <input type="number" class="form-control" id="updateHoursTotal">
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-warning" onclick="updateCourse()">
+                        <i class="fas fa-code-branch"></i> Создать версию
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Version History Modal -->
+    <div class="modal fade" id="versionHistoryModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">История версий курса</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="versionHistoryContent">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

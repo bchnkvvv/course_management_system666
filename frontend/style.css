@@ -1,0 +1,87 @@
+/* Дополнительные стили */
+:root {
+    --primary-color: #0d6efd;
+    --success-color: #198754;
+    --warning-color: #ffc107;
+    --danger-color: #dc3545;
+}
+
+.navbar-brand {
+    font-weight: bold;
+}
+
+.card {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.card-header {
+    font-weight: 600;
+}
+
+.tree {
+    font-size: 14px;
+}
+
+.tree li {
+    list-style-type: none;
+    margin: 5px 0;
+    position: relative;
+}
+
+.tree li::before {
+    content: "";
+    position: absolute;
+    top: -7px;
+    left: -20px;
+    border-left: 1px solid #ccc;
+    border-bottom: 1px solid #ccc;
+    width: 20px;
+    height: 15px;
+}
+
+.tree li::after {
+    position: absolute;
+    content: "";
+    top: 8px;
+    left: -20px;
+    border-left: 1px solid #ccc;
+    height: 100%;
+}
+
+.tree li:last-child::after {
+    display: none;
+}
+
+.table {
+    font-size: 14px;
+}
+
+.schedule-cell {
+    background-color: #f8f9fa;
+    transition: all 0.2s;
+}
+
+.schedule-cell:hover {
+    background-color: #e9ecef;
+    transform: scale(1.02);
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+    .timeline-item {
+        flex-direction: column;
+    }
+    
+    .timeline-badge {
+        margin-bottom: 10px;
+    }
+    
+    .table {
+        font-size: 12px;
+    }
+    
+    .schedule-cell {
+        padding: 5px;
+    }
+}
