@@ -17,7 +17,6 @@ class Department(Base):
     is_deleted = Column(Boolean, default=False)
     
     parent = relationship("Department", remote_side=[id], backref="children")
-    teachers = relationship("Teacher", back_populates="department")
 
 class Person(Base):
     __tablename__ = "persons"
@@ -31,36 +30,24 @@ class Person(Base):
     updated_at = Column(DateTime, onupdate=func.now())
     is_active = Column(Boolean, default=True)
     is_deleted = Column(Boolean, default=False)
-    
-    __mapper_args__ = {
-        "polymorphic_on": "person_type",
-        "polymorphic_identity": "person"
-    }
 
-class Student(Person):
+class Student(Base):
     __tablename__ = "students"
-    __mapper_args__ = {"polymorphic_identity": "student"}
     
     person_id = Column(Integer, ForeignKey("persons.id"), primary_key=True)
     student_card_number = Column(String(50), unique=True)
     group_name = Column(String(100))
     enrollment_year = Column(Integer)
     average_grade = Column(Float)
-    
-    assignments = relationship("CourseAssignment", back_populates="student")
 
-class Teacher(Person):
+class Teacher(Base):
     __tablename__ = "teachers"
-    __mapper_args__ = {"polymorphic_identity": "teacher"}
     
     person_id = Column(Integer, ForeignKey("persons.id"), primary_key=True)
     employee_number = Column(String(50), unique=True)
     academic_degree = Column(String(100))
     position = Column(String(100))
     department_id = Column(Integer, ForeignKey("departments.id"))
-    
-    department = relationship("Department", back_populates="teachers")
-    schedule_entries = relationship("ScheduleEntry", back_populates="teacher")
 
 class Course(Base):
     __tablename__ = "courses"
@@ -71,8 +58,9 @@ class Course(Base):
     created_at = Column(DateTime, server_default=func.now())
     is_deleted = Column(Boolean, default=False)
     
-    versions = relationship("CourseVersion", back_populates="course")
-    current_version = relationship("CourseVersion", foreign_keys=[current_version_id])
+    # ЯВНО УКАЗЫВАЕМ foreign_keys для каждой связи
+    versions = relationship("CourseVersion", foreign_keys="[CourseVersion.course_id]", back_populates="course")
+    current_version = relationship("CourseVersion", foreign_keys=[current_version_id], uselist=False)
 
 class CourseVersion(Base):
     __tablename__ = "course_versions"
@@ -92,9 +80,7 @@ class CourseVersion(Base):
     created_at = Column(DateTime, server_default=func.now())
     is_current = Column(Boolean, default=False)
     
-    course = relationship("Course", back_populates="versions", foreign_keys=[course_id])
-    schedule_entries = relationship("ScheduleEntry", back_populates="course_version")
-    assignments = relationship("CourseAssignment", back_populates="course_version")
+    course = relationship("Course", foreign_keys=[course_id], back_populates="versions")
 
 class ScheduleEntry(Base):
     __tablename__ = "schedule_entries"
@@ -113,9 +99,6 @@ class ScheduleEntry(Base):
     is_cancelled = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, onupdate=func.now())
-    
-    course_version = relationship("CourseVersion", back_populates="schedule_entries")
-    teacher = relationship("Teacher", back_populates="schedule_entries")
 
 class CourseAssignment(Base):
     __tablename__ = "course_assignments"
@@ -126,9 +109,6 @@ class CourseAssignment(Base):
     enrollment_date = Column(DateTime, server_default=func.now())
     grade = Column(Float)
     status = Column(String(50), default="enrolled")
-    
-    student = relationship("Student", back_populates="assignments")
-    course_version = relationship("CourseVersion", back_populates="assignments")
 
 class Version(Base):
     __tablename__ = "versions"

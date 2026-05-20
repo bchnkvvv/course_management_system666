@@ -1,15 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
-from app.database import get_db, get_async_pool
-from app.orm_crud import ORMCrud
-from app.native_crud import NativeSQLCrud
-from app.schemas import (
-    CourseResponse, CourseVersionCreate, CourseUpdate,
-    CourseVersionResponse, VersionHistory
-)
-from app.dependencies import get_use_native_sql
+from app.database import get_db
+from app.models_orm import Course, CourseVersion
+from app.schemas import CourseResponse, CourseVersionCreate, CourseUpdate, CourseVersionResponse
 
 router = APIRouter(prefix="/courses", tags=["Courses"])
 
@@ -18,235 +15,156 @@ async def create_course(
     code: str,
     version_data: CourseVersionCreate,
     created_by: int = 1,
-    db: AsyncSession = Depends(get_db),
-    use_native: bool = Depends(get_use_native_sql)
+    db: AsyncSession = Depends(get_db)
 ):
     """Создание нового курса с первой версией"""
-    if use_native:
-        pool = await get_async_pool()
-        crud = NativeSQLCrud(pool)
-        result = await crud.create_course(code, version_data.model_dump(), created_by)
-        return result
-    else:
-        crud = ORMCrud(db)
-        course = await crud.create_course(code, version_data, created_by)
-        await db.refresh(course, ['versions', 'current_version'])
+    try:
+        course = Course(code=code, is_deleted=False)
+        db.add(course)
+        await db.flush()
+        
+        version = CourseVersion(
+            course_id=course.id,
+            version_number=1,
+            title=version_data.title,
+            description=version_data.description,
+            credits=version_data.credits,
+            hours_total=version_data.hours_total,
+            hours_lecture=version_data.hours_lecture,
+            hours_practice=version_data.hours_practice,
+            hours_lab=version_data.hours_lab,
+            status=version_data.status,
+            created_by=created_by,
+            is_current=True
+        )
+        db.add(version)
+        await db.flush()
+        
+        course.current_version_id = version.id
+        await db.flush()
+        await db.refresh(course)
+        
         return course
+    except Exception as e:
+        print(f"Error creating course: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/{course_id}", response_model=CourseVersionResponse)
 async def update_course(
     course_id: int,
     update_data: CourseUpdate,
     changed_by: int = 1,
-    db: AsyncSession = Depends(get_db),
-    use_native: bool = Depends(get_use_native_sql)
+    db: AsyncSession = Depends(get_db)
 ):
     """Обновление курса с созданием новой версии"""
-    if use_native:
-        pool = await get_async_pool()
-        crud = NativeSQLCrud(pool)
-        result = await crud.update_course(
-            course_id, 
-            update_data.model_dump(exclude_unset=True), 
-            changed_by,
-            update_data.change_reason or ""
+    try:
+        from sqlalchemy import func
+        
+        current_query = select(CourseVersion).where(
+            CourseVersion.course_id == course_id,
+            CourseVersion.is_current == True
         )
-        return result
-    else:
-        crud = ORMCrud(db)
-        version = await crud.update_course(
-            course_id,
-            update_data.model_dump(exclude_unset=True),
-            changed_by,
-            update_data.change_reason or ""
+        result = await db.execute(current_query)
+        current_version = result.scalar_one_or_none()
+        
+        if not current_version:
+            raise HTTPException(status_code=404, detail="Course not found")
+        
+        max_version_query = select(func.max(CourseVersion.version_number)).where(
+            CourseVersion.course_id == course_id
         )
-        return version
+        result = await db.execute(max_version_query)
+        max_version = result.scalar() or 0
+        next_version = max_version + 1
+        
+        new_version = CourseVersion(
+            course_id=course_id,
+            version_number=next_version,
+            title=update_data.title if update_data.title else current_version.title,
+            description=update_data.description if update_data.description else current_version.description,
+            credits=update_data.credits if update_data.credits else current_version.credits,
+            hours_total=update_data.hours_total if update_data.hours_total else current_version.hours_total,
+            hours_lecture=update_data.hours_lecture if update_data.hours_lecture else current_version.hours_lecture,
+            hours_practice=update_data.hours_practice if update_data.hours_practice else current_version.hours_practice,
+            hours_lab=update_data.hours_lab if update_data.hours_lab else current_version.hours_lab,
+            status=update_data.status if update_data.status else current_version.status,
+            created_by=changed_by,
+            is_current=True
+        )
+        db.add(new_version)
+        await db.flush()
+        
+        current_version.is_current = False
+        
+        course_query = select(Course).where(Course.id == course_id)
+        result = await db.execute(course_query)
+        course = result.scalar_one()
+        course.current_version_id = new_version.id
+        
+        await db.flush()
+        await db.refresh(new_version)
+        
+        return new_version
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating course: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{course_id}/versions", response_model=List[CourseVersionResponse])
 async def get_course_versions(
     course_id: int,
-    db: AsyncSession = Depends(get_db),
-    use_native: bool = Depends(get_use_native_sql)
+    db: AsyncSession = Depends(get_db)
 ):
     """Получение всех версий курса"""
-    if use_native:
-        pool = await get_async_pool()
-        crud = NativeSQLCrud(pool)
-        versions = await crud.get_course_versions(course_id)
-        return versions
-    else:
-        crud = ORMCrud(db)
-        versions = await crud.get_course_versions(course_id)
-        return versions
+    try:
+        query = select(CourseVersion).where(
+            CourseVersion.course_id == course_id
+        ).order_by(CourseVersion.version_number.desc())
+        
+        result = await db.execute(query)
+        return list(result.scalars().all())
+    except Exception as e:
+        print(f"Error: {e}")
+        return []
 
-@router.get("/{course_id}/versions/{version_number}", response_model=VersionHistory)
-async def get_version_snapshot(
-    course_id: int,
-    version_number: int,
-    db: AsyncSession = Depends(get_db),
-    use_native: bool = Depends(get_use_native_sql)
+@router.get("/list", response_model=List[CourseResponse])
+async def get_courses_list(
+    limit: int = 100,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db)
 ):
-    """Получение данных конкретной версии курса"""
-    if use_native:
-        pool = await get_async_pool()
-        crud = NativeSQLCrud(pool)
-        snapshot = await crud.get_version_snapshot("course", course_id, version_number)
-    else:
-        crud = ORMCrud(db)
-        snapshot = await crud.get_version_snapshot("course", course_id, version_number)
-    
-    if not snapshot:
-        raise HTTPException(status_code=404, detail="Version not found")
-    
-    return VersionHistory(
-        version_number=version_number,
-        snapshot=snapshot,
-        changed_at=snapshot.get("changed_at", ""),
-        change_reason=snapshot.get("change_reason"),
-        is_current=(version_number == snapshot.get("version_number"))
-    )
+    """Получение списка курсов"""
+    try:
+        query = select(Course).where(
+            Course.is_deleted == False
+        ).options(
+            selectinload(Course.current_version),
+            selectinload(Course.versions)
+        ).limit(limit).offset(offset).order_by(Course.id.desc())
+        
+        result = await db.execute(query)
+        return list(result.scalars().all())
+    except Exception as e:
+        print(f"Error loading courses: {e}")
+        return []
 
 @router.delete("/{course_id}")
 async def soft_delete_course(
     course_id: int,
-    db: AsyncSession = Depends(get_db),
-    use_native: bool = Depends(get_use_native_sql)
+    db: AsyncSession = Depends(get_db)
 ):
     """Логическое удаление курса"""
-    if use_native:
-        pool = await get_async_pool()
-        crud = NativeSQLCrud(pool)
-        success = await crud.soft_delete_course(course_id)
-    else:
-        crud = ORMCrud(db)
-        success = await crud.soft_delete_course(course_id)
-    
-    if not success:
-        raise HTTPException(status_code=404, detail="Course not found")
-    
-    return {"message": "Course deleted successfully"}
-
-@router.get("/list", response_model=List[CourseResponse])
-async def get_courses_list(
-    limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db),
-    use_native: bool = Depends(get_use_native_sql)
-):
-    """Получение списка всех курсов"""
     try:
-        if use_native:
-            pool = await get_async_pool()
-            async with pool.acquire() as conn:
-                rows = await conn.fetch("""
-                    SELECT 
-                        c.id, c.code, c.created_at,
-                        cv.id as version_id, cv.version_number, cv.title, 
-                        cv.description, cv.credits, cv.hours_total, cv.status,
-                        cv.created_at as version_created_at
-                    FROM courses c
-                    LEFT JOIN course_versions cv ON c.current_version_id = cv.id
-                    WHERE c.is_deleted = FALSE
-                    ORDER BY c.id DESC
-                    LIMIT $1 OFFSET $2
-                """, limit, offset)
-                
-                courses = []
-                for row in rows:
-                    course: dict = {
-                        "id": row["id"],
-                        "code": row["code"],
-                        "created_at": row["created_at"],
-                        "is_deleted": False,
-                        "current_version": None,
-                        "all_versions": []
-                    }
-                    
-                    if row["version_id"]:
-                        course["current_version"] = {
-                            "id": row["version_id"],
-                            "version_number": row["version_number"],
-                            "title": row["title"],
-                            "description": row["description"],
-                            "credits": row["credits"],
-                            "hours_total": row["hours_total"],
-                            "hours_lecture": 0,
-                            "hours_practice": 0,
-                            "hours_lab": 0,
-                            "status": row["status"],
-                            "created_at": row["version_created_at"],
-                            "is_current": True,
-                            "created_by": None
-                        }
-                    
-                    courses.append(course)
-                
-                return courses
-        else:
-            crud = ORMCrud(db)
-            courses = await crud.get_courses_list(limit, offset)
-            return courses
+        from sqlalchemy import update
+        
+        result = await db.execute(
+            update(Course)
+            .where(Course.id == course_id)
+            .values(is_deleted=True)
+        )
+        await db.flush()
+        return {"message": "Course deleted successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/{course_id}", response_model=CourseResponse)
-async def get_course(
-    course_id: int,
-    db: AsyncSession = Depends(get_db),
-    use_native: bool = Depends(get_use_native_sql)
-):
-    """Получение курса по ID"""
-    try:
-        if use_native:
-            pool = await get_async_pool()
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow("""
-                    SELECT 
-                        c.id, c.code, c.created_at,
-                        cv.id as version_id, cv.version_number, cv.title, 
-                        cv.description, cv.credits, cv.hours_total, cv.status
-                    FROM courses c
-                    LEFT JOIN course_versions cv ON c.current_version_id = cv.id
-                    WHERE c.id = $1 AND c.is_deleted = FALSE
-                """, course_id)
-                
-                if not row:
-                    raise HTTPException(status_code=404, detail="Course not found")
-                
-                course = {
-                    "id": row["id"],
-                    "code": row["code"],
-                    "created_at": row["created_at"],
-                    "is_deleted": False,
-                    "current_version": None,
-                    "all_versions": []
-                }
-                
-                if row["version_id"]:
-                    course["current_version"] = {
-                        "id": row["version_id"],
-                        "version_number": row["version_number"],
-                        "title": row["title"],
-                        "description": row["description"],
-                        "credits": row["credits"],
-                        "hours_total": row["hours_total"],
-                        "hours_lecture": 0,
-                        "hours_practice": 0,
-                        "hours_lab": 0,
-                        "status": row["status"],
-                        "created_at": row["created_at"],
-                        "is_current": True,
-                        "created_by": None
-                    }
-                
-                return course
-        else:
-            crud = ORMCrud(db)
-            course = await crud.get_course_by_id(course_id)
-            if not course:
-                raise HTTPException(status_code=404, detail="Course not found")
-            return course
-    except HTTPException:
-        raise
-    except Exception as e:
+        print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
